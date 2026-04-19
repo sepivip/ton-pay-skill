@@ -1,0 +1,27 @@
+{
+  "name": "ton-pay-example-tma",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ton-pay/api": "0.3.2",
+    "@ton-pay/ui-react": "0.3.2",
+    "@tonconnect/ui-react": "2.4.4",
+    "@telegram-apps/sdk-react": "3.3.9",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
+    "@vitejs/plugin-react": "4.3.0",
+    "typescript": "5.5.4",
+    "vite": "5.4.0"
+  }
+}
