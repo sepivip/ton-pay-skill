@@ -114,13 +114,18 @@ export default function CheckoutPage() {
 
 ### B. Vanilla JS
 
+The vanilla `@ton-pay/ui` package ships two complementary pieces:
+
+- **`createTonPay({ manifestUrl })`** — returns a `TonPayClient` with a `pay(getMessage)` method. This is the programmatic entry point.
+- **`@ton-pay/ui/embed`** — a drop-in IIFE script that renders the styled TON Pay button into a container element and invokes a named global callback on click. Use this if you want the pre-styled button without importing `@ton-pay/ui-react`.
+
 **Install:**
 
 ```bash
 npm i @ton-pay/api@0.3.2 @ton-pay/ui@0.1.2 @tonconnect/ui@2.4.4
 ```
 
-**HTML:**
+**HTML** (using the embed script + ESM import map):
 
 ```html
 <!doctype html>
@@ -128,9 +133,19 @@ npm i @ton-pay/api@0.3.2 @ton-pay/ui@0.1.2 @tonconnect/ui@2.4.4
   <head>
     <meta charset="utf-8" />
     <title>TON Pay Checkout</title>
+    <script type="importmap">
+      {
+        "imports": {
+          "@tonconnect/ui":  "https://esm.sh/@tonconnect/ui@2.4.4"
+        }
+      }
+    </script>
   </head>
   <body>
     <div id="ton-pay-button"></div>
+
+    <!-- Copy ton-pay-embed.js from node_modules/@ton-pay/ui/dist/ into your static assets -->
+    <script src="./ton-pay-embed.js?containerId=ton-pay-button&callback=onTonPayClick"></script>
     <script type="module" src="./main.js"></script>
   </body>
 </html>
@@ -139,21 +154,20 @@ npm i @ton-pay/api@0.3.2 @ton-pay/ui@0.1.2 @tonconnect/ui@2.4.4
 **`main.js`:**
 
 ```js
-import { TonConnectUI } from "@tonconnect/ui";
-import { createTonPayButton } from "@ton-pay/ui";
-import { createTonPayTransfer } from "@ton-pay/api";
+import { createTonPay } from "https://esm.sh/@ton-pay/ui@0.1.2/vanilla";
+import { createTonPayTransfer } from "https://esm.sh/@ton-pay/api@0.3.2";
 
-const tonConnectUI = new TonConnectUI({
-  manifestUrl: "https://your-app.example.com/tonconnect-manifest.json",
+const APP_URL   = window.location.origin;
+const API_KEY   = "tp_test_...";
+const RECIPIENT = "EQA...";
+
+const client = createTonPay({
+  manifestUrl: `${APP_URL}/tonconnect-manifest.json`,
 });
 
-const RECIPIENT = "EQA...";
-const API_KEY   = "tp_test_...";
-
-createTonPayButton({
-  rootId: "ton-pay-button",
-  tonConnectUI,
-  createMessage: async (senderAddr) => {
+// The embed script calls `window[callback]` when the button is clicked.
+window.onTonPayClick = async () => {
+  await client.pay(async (senderAddr) => {
     const { message, reference } = await createTonPayTransfer(
       {
         amount: 1.5,
@@ -166,11 +180,23 @@ createTonPayButton({
     );
     // POST the reference to your backend here before returning.
     return { message, reference };
-  },
-});
+  });
+};
 ```
 
-Pair with a Node webhook server — see `examples/vanilla-js/server/webhook.js` in this repo.
+**Key shapes:**
+
+```ts
+// @ton-pay/ui
+function createTonPay(opts: { manifestUrl: string; connectTimeoutMs?: number }): TonPayClient;
+class TonPayClient {
+  pay(getMessage: (senderAddr: string) => Promise<{ message, reference }>): Promise<PayResult>;
+  waitForWalletConnection(): Promise<string>;
+  disconnect(): Promise<void>;
+}
+```
+
+For a Vite-bundled version and the matching Node webhook server, see `examples/vanilla-js/` in this repo.
 
 ### C. Telegram Mini App
 
