@@ -1,11 +1,11 @@
 ---
 name: ton-pay
-description: Integrate TON Pay (@ton-pay/api + @ton-pay/ui) checkout into a web app, Vanilla JS site, or Telegram Mini App. Use when the user says "add TON Pay", "accept TON payments", "TON checkout", "jetton payment", "@ton-pay/api", "tonconnect checkout", "TON Connect payment", "accept crypto on TON", or is wiring a user-pays-merchant flow on TON. Not for custodial deposit-and-sweep exchange patterns.
+description: Integrate TON Pay (@ton-pay/api + @ton-pay/ui) checkout into a web app, Vanilla JS site, or Telegram Mini App. Non-custodial — funds go directly from user's wallet to your recipient address. Works without a merchant dashboard or API key; the dashboard is optional and only needed for push-based webhook notifications. Use when the user says "add TON Pay", "accept TON payments", "TON checkout", "jetton payment", "@ton-pay/api", "tonconnect checkout", "TON Connect payment", "accept crypto on TON", or is wiring a user-pays-merchant flow on TON. Not for custodial deposit-and-sweep exchange patterns.
 ---
 
 # TON Pay
 
-Integrate TON Pay into a web app, Vanilla JS site, or Telegram Mini App. TON Pay is a merchant payment SDK: the user clicks a button, their wallet opens, they sign, funds arrive at your recipient address, and a webhook fires to your backend.
+Integrate TON Pay into a web app, Vanilla JS site, or Telegram Mini App. TON Pay is a **non-custodial** checkout SDK — the user signs with their own wallet and funds go directly on-chain to your recipient address. TON Pay never touches the money.
 
 ## §1 When to use this skill
 
@@ -17,19 +17,39 @@ Use this skill when:
 **Do NOT use this skill if:**
 - You are building a **custodial exchange** — per-user deposit addresses, detect incoming, sweep to master. That requires highload v3 wallets and is a different problem; look for a `ton-custodial-payments` skill or build against `@ton/ton` directly.
 - You are doing **pure on-chain transfers without a UI** — use `@ton/ton` or `tonweb`, not TON Pay.
-- You want to **build your own button / UX from scratch** — that's fine, but TON Pay SDK + `@tonconnect/ui` is a lower cost path.
 
-## §2 Prerequisites
+## §2 How TON Pay is architected
 
-Before running any code:
+Understanding this prevents the most common confusion:
 
-1. **TON Pay merchant account** — sign up at https://docs.ton.org/ecosystem/ton-pay/overview (links to the dashboard)
-2. **Testnet API key + secret** — Dashboard → switch to Testnet → Developer → API keys
-3. **Publicly hosted `tonconnect-manifest.json`** — absolute HTTPS URL, permissive CORS on `iconUrl`. In development, this can be a file served by your dev server.
-4. **Node 18+**
-5. **For Telegram Mini App integration only:** a registered bot and Mini App URL in @BotFather
+| Component | What it does | Centralized? | Required? |
+|---|---|---|---|
+| User's wallet | Holds funds, signs transfers | No (user-owned) | Yes |
+| TON Connect protocol | Wallet ↔ dApp connection | No (peer-to-peer) | Yes |
+| Your merchant address | Receives funds on-chain | No (you own it) | Yes |
+| TON blockchain | Settles the transfer | No | Yes |
+| `pay.ton.org` SDK server | Builds TON Connect payload, hosts status-lookup API | **Yes** (run by TON Foundation) | **Only for SDK convenience — can be bypassed** |
+| Merchant Dashboard at `pay.ton.org` | Webhook delivery + API secret for signature verification | Yes | **Optional — only if you want webhooks** |
 
-## §3 Quickstart — pick your framework
+**Bottom line:**
+- **No merchant account needed** for a working checkout. The SDK works without an API key as long as you pass `recipientAddr` yourself.
+- **An API key + secret from the merchant dashboard unlocks webhooks.** Without it you poll `getTonPayTransferByReference(reference)` client-side (or from your own server).
+- **Funds are always non-custodial.** Regardless of path, TON Pay never holds the money.
+
+This skill treats the **no-dashboard path as the default quickstart**, and treats webhooks as an optional production upgrade (`reference/webhooks.md`).
+
+## §3 Prerequisites
+
+For the default (no-dashboard) path:
+1. A TON wallet address you control — this is your `recipientAddr`
+2. **Publicly hosted `tonconnect-manifest.json`** — absolute HTTPS URL, permissive CORS on `iconUrl`
+3. **Node 18+**
+4. **For Telegram Mini App integration only:** a registered bot and Mini App URL in @BotFather
+
+Additionally, if you want webhooks:
+5. A TON Pay merchant account + API key + API secret ("TON Pay Merchant Dashboard → Developer → Webhooks")
+
+## §4 Quickstart — pick your framework
 
 ### A. Next.js App Router
 
@@ -68,18 +88,19 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 }
 ```
 
-**Create a checkout page** (`app/checkout/page.tsx`):
+**Create a checkout page** (`app/checkout/page.tsx`) — dashboard-free, polling only:
 
 ```tsx
 "use client";
 import { TonPayButton, useTonPay } from "@ton-pay/ui-react";
-import { createTonPayTransfer } from "@ton-pay/api";
+import { createTonPayTransfer, getTonPayTransferByReference } from "@ton-pay/api";
+import { useState } from "react";
 
 const RECIPIENT = process.env.NEXT_PUBLIC_TON_RECIPIENT_ADDR!;
-const API_KEY   = process.env.NEXT_PUBLIC_TONPAY_API_KEY!;
 
 export default function CheckoutPage() {
   const { pay } = useTonPay();
+  const [status, setStatus] = useState<"idle" | "pending" | "paid" | "failed">("idle");
   const amount = 1.5;              // TON
   const orderId = "order-42";
 
@@ -89,35 +110,52 @@ export default function CheckoutPage() {
         {
           amount,
           asset: "TON",
-          recipientAddr: RECIPIENT,
+          recipientAddr: RECIPIENT,      // required when no apiKey is passed
           senderAddr,
           commentToSender: orderId,
         },
-        { chain: "testnet", apiKey: API_KEY }
+        { chain: "testnet" }             // NOTE: no apiKey — SDK works without it
       );
-      // Persist `reference` alongside your order BEFORE returning.
+
+      // Persist `reference` alongside your order, then poll.
       await fetch("/api/orders", {
         method: "POST",
-        body: JSON.stringify({ orderId, reference, amount, asset: "TON" }),
+        body: JSON.stringify({ orderId, reference }),
       });
+      pollStatus(reference);
+
       return { message, reference };
     });
+  }
+
+  async function pollStatus(reference: string) {
+    setStatus("pending");
+    const deadline = Date.now() + 5 * 60 * 1000;
+    let delay = 2000;
+    while (Date.now() < deadline) {
+      const t = await getTonPayTransferByReference(reference, { chain: "testnet" });
+      if (t.status === "success") { setStatus("paid");   return; }
+      if (t.status === "failed")  { setStatus("failed"); return; }
+      await new Promise(r => setTimeout(r, delay));
+      delay = Math.min(delay + 2000, 10_000);
+    }
+    setStatus("failed");
   }
 
   return <TonPayButton handlePay={handlePay} />;
 }
 ```
 
-**Key API shape:** `useTonPay()` returns `{ pay }`. `pay(getMessage)` invokes your async callback with the connected wallet's `senderAddr` and expects you to return `{ message, reference }` — it then submits `message` to the wallet for signing. `<TonPayButton handlePay={...} />` just triggers your `handlePay`; all the wallet/connection UX is handled by the `<TonConnectUIProvider>` you set up in the layout.
+**Key API shape:** `useTonPay()` returns `{ pay }`. `pay(getMessage)` invokes your async callback with the connected wallet's `senderAddr` and expects you to return `{ message, reference }` — it submits `message` to the wallet for signing. `getTonPayTransferByReference(reference, { chain })` reads the transfer status from `pay.ton.org`; **no API key required**.
 
-**Set up the webhook** — see `reference/webhooks.md`. Register your webhook URL in the Merchant Dashboard after deploying.
+**Optional upgrade — webhooks (requires merchant dashboard):** See `reference/webhooks.md`. You get push notifications instead of polling, but you must register at the dashboard to get an API secret for signature verification.
 
 ### B. Vanilla JS
 
 The vanilla `@ton-pay/ui` package ships two complementary pieces:
 
-- **`createTonPay({ manifestUrl })`** — returns a `TonPayClient` with a `pay(getMessage)` method. This is the programmatic entry point.
-- **`@ton-pay/ui/embed`** — a drop-in IIFE script that renders the styled TON Pay button into a container element and invokes a named global callback on click. Use this if you want the pre-styled button without importing `@ton-pay/ui-react`.
+- **`createTonPay({ manifestUrl })`** — returns a `TonPayClient` with a `pay(getMessage)` method.
+- **`@ton-pay/ui/embed`** — a drop-in IIFE script that renders the styled TON Pay button into a container element and invokes a named global callback on click.
 
 **Install:**
 
@@ -151,21 +189,19 @@ npm i @ton-pay/api@0.3.2 @ton-pay/ui@0.1.2 @tonconnect/ui@2.4.4
 </html>
 ```
 
-**`main.js`:**
+**`main.js`** — dashboard-free:
 
 ```js
 import { createTonPay } from "https://esm.sh/@ton-pay/ui@0.1.2/vanilla";
-import { createTonPayTransfer } from "https://esm.sh/@ton-pay/api@0.3.2";
+import { createTonPayTransfer, getTonPayTransferByReference } from "https://esm.sh/@ton-pay/api@0.3.2";
 
 const APP_URL   = window.location.origin;
-const API_KEY   = "tp_test_...";
-const RECIPIENT = "EQA...";
+const RECIPIENT = "EQA...";                        // your TON address
 
 const client = createTonPay({
   manifestUrl: `${APP_URL}/tonconnect-manifest.json`,
 });
 
-// The embed script calls `window[callback]` when the button is clicked.
 window.onTonPayClick = async () => {
   await client.pay(async (senderAddr) => {
     const { message, reference } = await createTonPayTransfer(
@@ -176,12 +212,23 @@ window.onTonPayClick = async () => {
         senderAddr,
         commentToSender: "order-42",
       },
-      { chain: "testnet", apiKey: API_KEY }
+      { chain: "testnet" }                         // no apiKey
     );
-    // POST the reference to your backend here before returning.
+    pollStatus(reference);
     return { message, reference };
   });
 };
+
+async function pollStatus(reference) {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  let delay = 2000;
+  while (Date.now() < deadline) {
+    const t = await getTonPayTransferByReference(reference, { chain: "testnet" });
+    if (t.status === "success" || t.status === "failed") return t;
+    await new Promise(r => setTimeout(r, delay));
+    delay = Math.min(delay + 2000, 10_000);
+  }
+}
 ```
 
 **Key shapes:**
@@ -196,7 +243,7 @@ class TonPayClient {
 }
 ```
 
-For a Vite-bundled version and the matching Node webhook server, see `examples/vanilla-js/` in this repo.
+For a Vite-bundled version and an optional webhook server, see `examples/vanilla-js/` in this repo.
 
 ### C. Telegram Mini App
 
@@ -224,30 +271,36 @@ createRoot(document.getElementById("root")!).render(
 );
 ```
 
-**Checkout** uses the same `useTonPay()` + `<TonPayButton handlePay>` pattern as §3A — the TMA-specific concerns are limited to init (`@telegram-apps/sdk-react`), back-button handling, and theming. The `manifestUrl` must match your @BotFather Mini App URL exactly — see `reference/telegram-mini-app.md`.
+**Checkout** uses the same `useTonPay()` + `<TonPayButton handlePay>` pattern as §4A (dashboard-free by default). The TMA-specific concerns are limited to init, back-button handling, and theming. The `manifestUrl` must match your @BotFather Mini App URL exactly — see `reference/telegram-mini-app.md`.
 
-## §4 Production checklist
+## §5 Production checklist
 
-Before flipping `chain: "testnet"` → `"mainnet"`:
+### Default path (polling, no merchant dashboard)
 
-- [ ] Webhook endpoint deployed and reachable at an HTTPS URL
-- [ ] Webhook URL registered in Merchant Dashboard (mainnet environment)
-- [ ] `verifySignature(rawBody, signature, apiSecret)` passes on your "Send sample" tests
+- [ ] `recipientAddr` is a TON address you control on mainnet (not a contract placeholder)
+- [ ] `tonconnect-manifest.json` hosted at absolute HTTPS URL, `iconUrl` CORS-open
+- [ ] Client-side polling is guarded by a 5-minute timeout and survives tab close (persist `reference` on your server so a refreshed page can resume polling)
+- [ ] Ideally: your server also polls `getTonPayTransferByReference(reference, { chain: "mainnet" })` as a backup — the client may close the tab before `status === "success"`
+- [ ] `reference` is stored with the order row the moment you call `createTonPayTransfer`
+- [ ] Switch `chain: "testnet"` → `"mainnet"` only after end-to-end test on testnet
+
+### With webhooks (optional upgrade, requires merchant dashboard)
+
+Everything above, plus:
+
+- [ ] Webhook endpoint deployed and reachable at an HTTPS URL, registered in the Merchant Dashboard
+- [ ] `verifySignature(rawBody, signature, apiSecret)` passes on "Send sample" tests
 - [ ] Handler validates in order: signature → event → reference → amount → asset → status → not-already-processed
 - [ ] Handler returns 2xx only after the DB write is durable
-- [ ] API secret stored in server env only (never shipped in a client bundle)
-- [ ] Every scenario in `reference/testing.md` §6 tested and passing on testnet
-- [ ] Client-side poll timeout is ≥5 min (15 min if `onramp: true`)
+- [ ] API secret stored server-side only (never in a client bundle)
 - [ ] `reference` generation uses a UUID (never reused across retries)
-- [ ] `NEXT_PUBLIC_*` env vars only hold the API **key**, never the **secret**
 
-## §5 Further reading
+## §6 Further reading
 
-- [`reference/webhooks.md`](reference/webhooks.md) — signature verification, retry, idempotency, 7-step validation
+- [`reference/webhooks.md`](reference/webhooks.md) — **optional** webhook path: signature verification, retry, idempotency, 7-step validation
 - [`reference/testing.md`](reference/testing.md) — testnet flow, faucet, polling, local tunnel
 - [`reference/telegram-mini-app.md`](reference/telegram-mini-app.md) — TMA wiring, theme, back button
-- [`reference/onramp.md`](reference/onramp.md) — fiat → TON for users without balance
+- [`reference/onramp.md`](reference/onramp.md) — fiat → TON for users without balance (requires API key)
 - [`reference/troubleshooting.md`](reference/troubleshooting.md) — common pitfalls and fixes
 - Official TON Pay docs: https://docs.ton.org/ecosystem/ton-pay/overview
-- TON Pay API reference: https://docs.ton.org/ecosystem/ton-pay/api-reference
 - Runnable examples in this repo: `examples/nextjs-app-router`, `examples/vanilla-js`, `examples/telegram-mini-app`

@@ -1,8 +1,32 @@
 # TON Pay Webhooks
 
-Every TON Pay checkout sends a `transfer.completed` webhook to your server when the on-chain transaction finishes. Your webhook handler is the **only trustworthy source** for marking an order paid — never rely on the client-side `getTonPayTransferByReference` result alone, because the user can close the tab mid-payment.
+> **Webhooks are OPTIONAL.** They require signing up for a TON Pay Merchant Dashboard account to obtain an API key + API secret. If you don't want that dependency, skip this file — server-side polling of `getTonPayTransferByReference(reference, { chain })` is a valid alternative and requires no account. See `SKILL.md` §2 for the architecture overview.
+
+If you opt in, TON Pay sends a `transfer.completed` webhook to your server when the on-chain transaction finishes. The webhook is a trustworthy source for marking an order paid — more reliable than client-side polling alone, because the user can close the tab mid-payment.
 
 This reference covers: payload shape, HMAC-SHA256 signature verification, retry behaviour, idempotency, and a seven-step validation checklist.
+
+## Polling alternative
+
+If you skip webhooks, run a small server-side polling loop instead:
+
+```ts
+import { getTonPayTransferByReference } from "@ton-pay/api";
+
+// Runs on your server. Kicked off when the client calls /api/orders with a reference.
+async function watchOrder(reference: string) {
+  const deadline = Date.now() + 30 * 60 * 1000;   // 30 min — server-side can afford a longer window
+  while (Date.now() < deadline) {
+    const t = await getTonPayTransferByReference(reference, { chain: "mainnet" });
+    if (t.status === "success") { await markOrderPaid(reference, t.txHash); return; }
+    if (t.status === "failed")  { await markOrderFailed(reference); return; }
+    await new Promise(r => setTimeout(r, 5000));
+  }
+  // Timeout: leave the order `pending` — a manual reconcile job or a later poll can resolve it.
+}
+```
+
+Trade-off: polling burns `pay.ton.org` bandwidth (fine at low volume), and there's no cryptographic signature on the response. Webhooks are cleaner at scale.
 
 ## Event types
 

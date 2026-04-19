@@ -1,5 +1,7 @@
 # Fiat → TON Onramp
 
+> **Onramp requires a TON Pay merchant account + API key.** Unlike the basic checkout flow (which is dashboard-free), the onramp feature uses MoonPay integration behind the scenes and the SDK needs your API key to authenticate the MoonPay call. If you want to stay fully dashboard-free, either skip onramp or route users to a separate fiat→crypto service of your choice.
+
 If a user has no TON or jettons in their wallet, the payment will fail. TON Pay can route them through an onramp (credit card / bank transfer → TON) before the payment, turning a hard failure into a longer-but-successful flow.
 
 ## When to enable

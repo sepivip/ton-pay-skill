@@ -1,10 +1,12 @@
 # Testing TON Pay
 
-Every TON Pay integration should be exercised end-to-end on **testnet** before the first mainnet payment. Testnet uses the same SDK, the same API calls, and the same webhook shape — the only difference is `chain: "testnet"` in `createTonPayTransfer` options and a separate testnet API key from the Merchant Dashboard.
+Every TON Pay integration should be exercised end-to-end on **testnet** before the first mainnet payment. Testnet uses the same SDK and the same API shape — the only difference is passing `chain: "testnet"` in your SDK calls.
 
-## 1. Get a testnet API key
+## 1. API key (optional)
 
-TON Pay Merchant Dashboard → switch environment to "Testnet" → Developer → API keys → create. The key prefix differs (`tp_test_…` vs `tp_live_…`), so a misplaced key fails loudly instead of silently charging real TON.
+The TON Pay SDK works **without an API key** as long as you pass `recipientAddr` directly. For the dashboard-free path this whole section is a no-op — skip to §2.
+
+If you do want webhooks (see `webhooks.md`), grab a testnet API key + secret: TON Pay Merchant Dashboard → switch environment to "Testnet" → Developer → API keys → create. The key prefix differs (`tp_test_…` vs `tp_live_…`) so a misplaced key fails loudly instead of silently charging real TON.
 
 ## 2. Get testnet TON
 
@@ -25,24 +27,26 @@ For optimistic UX, poll the transfer status client-side even though the webhook 
 ```ts
 import { getTonPayTransferByReference } from "@ton-pay/api";
 
-async function pollStatus(reference: string, apiKey: string) {
+async function pollStatus(reference: string) {
   const deadline = Date.now() + 5 * 60 * 1000; // 5 min timeout
   let delay = 2000;                             // 2s → 4s → 6s → ... capped at 10s
 
   while (Date.now() < deadline) {
-    const t = await getTonPayTransferByReference(reference, { chain: "testnet", apiKey });
+    const t = await getTonPayTransferByReference(reference, { chain: "testnet" });
     if (t.status === "success") return t;
-    if (t.status === "error")   throw new Error(t.errorMessage ?? "payment failed");
+    if (t.status === "failed")  throw new Error(t.errorMessage ?? "payment failed");
     await new Promise(r => setTimeout(r, delay));
     delay = Math.min(delay + 2000, 10_000);
   }
-  throw new Error("payment timed out — check the webhook or dashboard");
+  throw new Error("payment timed out — try a server-side retry poll");
 }
 ```
 
-Never mark the order paid purely on poll success — the webhook is the trust boundary. Use the poll only to update the UI from "waiting…" to "received".
+If you are ALSO using webhooks, the webhook is the trust boundary and polling is just for UI state. Without webhooks, the poll IS your trust boundary — mark the order paid when it returns `success`, and consider running the same poll server-side as a backstop in case the client tab closes.
 
-## 5. Local webhook tunnel
+## 5. Local webhook tunnel *(webhook-based setups only)*
+
+Skip this section if you're on the dashboard-free path.
 
 ```bash
 # Terminal 1: run your app
@@ -60,8 +64,12 @@ ngrok URLs rotate on every restart; paid ngrok plans give stable URLs. Alternati
 
 ## 6. What to actually test
 
-- **Happy path:** testnet payment succeeds, webhook fires with `status: "success"`, order marked paid.
-- **Failed path:** user rejects the wallet signature. No webhook fires (no on-chain transfer). Client poll times out; order stays `pending`.
+Every path needs these:
+- **Happy path:** testnet payment succeeds, `getTonPayTransferByReference(...)` returns `status: "success"`, order marked paid.
+- **Failed path:** user rejects the wallet signature. No transfer created. Client polling returns no such reference and times out; order stays `pending`.
+- **Tab close mid-payment:** user closes the tab after signing. Confirm your server-side poll (or webhook) still marks the order paid.
+
+Webhook-based setups also need:
 - **Webhook retry:** deliberately return 500 on the first request; confirm retries at 1s/5s/15s. Fix handler, confirm next retry writes the DB.
 - **Duplicate delivery:** call the dashboard "Send sample" twice with the same reference; confirm the second call returns 200 without duplicate DB writes.
 - **Signature failure:** flip one byte in your API secret env; confirm handler returns 401.
@@ -71,8 +79,7 @@ ngrok URLs rotate on every restart; paid ngrok plans give stable URLs. Alternati
 
 Only after every test in §6 passes:
 
-1. Generate mainnet API key + secret (separate entries in dashboard)
-2. Flip `chain: "mainnet"` in your client options
-3. Register your production webhook URL (HTTPS required)
-4. Run one small real-TON payment end-to-end
-5. Monitor logs for the first hour of real traffic
+1. **Dashboard-free path:** flip `chain: "testnet"` → `"mainnet"` in your SDK options; update `recipientAddr` to your mainnet address; deploy.
+2. **Webhook path:** additionally, generate mainnet API key + secret (separate entries in dashboard), register your production webhook URL (HTTPS required), and swap the env.
+3. Run one small real-TON payment end-to-end.
+4. Monitor logs for the first hour of real traffic.
