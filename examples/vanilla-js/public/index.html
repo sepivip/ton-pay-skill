@@ -64,14 +64,18 @@
 
   <!--
     === CONFIGURATION ===
-    Replace the placeholder values below with your real credentials.
+    Replace the placeholder values below with your real values.
     For production, use a bundler (e.g. Vite) with import.meta.env instead.
+
+    TONPAY_API_KEY is OPTIONAL. Leave it unset for the dashboard-free path
+    (client-side polling for confirmation). Only set it if you want webhook
+    delivery via the TON Pay Merchant Dashboard.
   -->
   <script>
-    window.__TONPAY_API_KEY__     = "YOUR_API_KEY";
     window.__TONPAY_CHAIN__       = "testnet";          // "mainnet" | "testnet"
     window.__TON_RECIPIENT_ADDR__ = "EQ...YOUR_WALLET_ADDRESS";
     window.__APP_URL__            = "https://your-ngrok-id.ngrok-free.app";
+    // window.__TONPAY_API_KEY__  = "tp_test_...";     // OPTIONAL
   </script>
 </head>
 <body>

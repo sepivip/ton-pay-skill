@@ -2,30 +2,36 @@
 
 A Vite + React + `@telegram-apps/sdk-react` example that opens inside a Telegram Mini App and uses TON Pay for checkout.
 
+**Default path:** dashboard-free. No TON Pay merchant account required. The client polls `getTonPayTransferByReference` to detect payment completion.
+
+**Optional upgrade:** set `VITE_TONPAY_API_KEY` to enable webhook-based confirmation via the TON Pay Merchant Dashboard. The dashboard-free path is strongly recommended for Mini Apps since users often close the TMA mid-payment.
+
 ## Prerequisites
 
 - Node.js 18+
-- A TON Pay **testnet** API key (get one at [ton-pay.io](https://ton-pay.io))
-- A TON recipient wallet address (testnet)
+- A TON recipient wallet address (testnet — Tonkeeper Developer Mode gives you one)
 - A Telegram bot created via [@BotFather](https://t.me/BotFather) with a Mini App URL configured
 - [ngrok](https://ngrok.com/) (or similar tunnel) to expose `localhost:5173` over HTTPS
+
+Optional:
+- A TON Pay **testnet** API key (only if you want webhooks)
 
 ## Setup
 
 ```bash
 cp .env.example .env
-# Fill in the values in .env
+# Fill in the required values; leave VITE_TONPAY_API_KEY commented out unless you want webhooks.
 npm install
 ```
 
 ### Environment variables
 
-| Variable | Description |
-|---|---|
-| `VITE_TONPAY_API_KEY` | Your TON Pay API key (`tp_test_…`) |
-| `VITE_TON_RECIPIENT_ADDR` | Your TON wallet address to receive payments |
-| `VITE_TONPAY_CHAIN` | `testnet` or `mainnet` |
-| `VITE_APP_URL` | Public HTTPS URL (your ngrok URL during dev) |
+| Variable | Required | Description |
+|---|---|---|
+| `VITE_TON_RECIPIENT_ADDR` | Yes | Your TON wallet address to receive payments |
+| `VITE_TONPAY_CHAIN` | Yes | `testnet` or `mainnet` |
+| `VITE_APP_URL` | Yes | Public HTTPS URL (your ngrok URL during dev) |
+| `VITE_TONPAY_API_KEY` | No | TON Pay API key — only if using webhooks |
 
 ## Running locally
 
@@ -46,13 +52,7 @@ ngrok http 5173
 2. Set the Web App URL to your ngrok HTTPS URL.
 3. BotFather will give you a direct link like `https://t.me/<yourbot>/<appname>`.
 
-Alternatively, use the **Menu Button** feature:
-
-```
-/mybots → <your bot> → Bot Settings → Menu Button → Set menu button URL → <ngrok URL>
-```
-
-4. Update `public/tonconnect-manifest.json` with your real URL and icon before deploying to production.
+Update `public/tonconnect-manifest.json` with your real URL and icon before deploying to production.
 
 ## Verification
 
@@ -66,7 +66,6 @@ Alternatively, use the **Menu Button** feature:
 ## Troubleshooting
 
 See `../../reference/telegram-mini-app.md` for detailed troubleshooting steps including:
-
 - TonConnect manifest errors
 - SDK init failures outside of Telegram
 - Back button / viewport not mounting

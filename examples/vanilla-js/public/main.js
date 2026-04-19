@@ -12,12 +12,13 @@
  */
 
 import { createTonPay } from "https://esm.sh/@ton-pay/ui@0.1.2/vanilla";
-import { createTonPayTransfer, TON } from "https://esm.sh/@ton-pay/api@0.3.2";
+import { createTonPayTransfer, getTonPayTransferByReference, TON } from "https://esm.sh/@ton-pay/api@0.3.2";
 
 // ---------------------------------------------------------------------------
-// Config (injected by index.html <script> globals)
+// Config (injected by index.html <script> globals). API_KEY is optional —
+// leave it unset for the dashboard-free path.
 // ---------------------------------------------------------------------------
-const API_KEY       = window.__TONPAY_API_KEY__     ?? "";
+const API_KEY       = window.__TONPAY_API_KEY__     || undefined;
 const CHAIN         = window.__TONPAY_CHAIN__        ?? "testnet";
 const RECIPIENT     = window.__TON_RECIPIENT_ADDR__  ?? "";
 const APP_URL       = window.__APP_URL__             ?? location.origin;
@@ -73,7 +74,6 @@ window.onTonPayClick = async () => {
         { chain: CHAIN, apiKey: API_KEY }
       );
 
-      // Store reference on the order object so the webhook can match it
       order.reference    = transfer.reference;
       order.bodyB64Hash  = transfer.bodyBase64Hash;
 
@@ -81,16 +81,38 @@ window.onTonPayClick = async () => {
       return transfer;
     });
 
-    setStatus(
-      `Transaction sent!\nReference: ${result.reference}\nTx result: ${JSON.stringify(result.txResult)}`,
-      "success"
-    );
-    console.info("TON Pay result", result);
+    setStatus(`Signed! Waiting for on-chain confirmation…\nRef: ${result.reference}`);
+    console.info("TON Pay send result", result);
+
+    // Poll pay.ton.org for status (dashboard-free path). If you also wired up
+    // webhooks, the webhook server is the authoritative source; this poll is
+    // just UI feedback.
+    try {
+      const final = await pollStatus(result.reference);
+      setStatus(
+        `Paid!\nReference: ${result.reference}\nTx: ${final.txHash ?? "—"}`,
+        "success"
+      );
+    } catch (err) {
+      setStatus(`Status poll failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     setStatus(`Error: ${msg}`, "error");
     console.error("TON Pay error", err);
-    // Re-throw so the embed button resets its loading state
     throw err;
   }
 };
+
+async function pollStatus(reference) {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  let delay = 2000;
+  while (Date.now() < deadline) {
+    const t = await getTonPayTransferByReference(reference, { chain: CHAIN, apiKey: API_KEY });
+    if (t.status === "success") return t;
+    if (t.status === "failed")  throw new Error(t.errorMessage ?? "payment failed on-chain");
+    await new Promise((r) => setTimeout(r, delay));
+    delay = Math.min(delay + 2000, 10_000);
+  }
+  throw new Error("timed out — check the recipient wallet or dashboard");
+}

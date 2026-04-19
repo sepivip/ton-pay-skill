@@ -7,9 +7,11 @@ import {
   themeParamsButtonTextColor,
 } from "@telegram-apps/sdk-react";
 
-const API_KEY = import.meta.env.VITE_TONPAY_API_KEY as string;
-const RECIPIENT_ADDR = import.meta.env.VITE_TON_RECIPIENT_ADDR as string;
-const CHAIN = (import.meta.env.VITE_TONPAY_CHAIN as "mainnet" | "testnet") ?? "testnet";
+// API key is OPTIONAL — only needed for webhook-based confirmation via the
+// TON Pay Merchant Dashboard. Leave unset for the dashboard-free path.
+const API_KEY = (import.meta.env.VITE_TONPAY_API_KEY as string | undefined) || undefined;
+const RECIPIENT_ADDR = (import.meta.env.VITE_TON_RECIPIENT_ADDR as string | undefined) ?? "";
+const CHAIN = ((import.meta.env.VITE_TONPAY_CHAIN as string | undefined) ?? "testnet") as "mainnet" | "testnet";
 
 // USDT address on TON
 const USDT_ASSET = "EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs";

@@ -4,7 +4,7 @@ import { createTonPayTransfer, getTonPayTransferByReference } from "@ton-pay/api
 import { useState } from "react";
 import { TON_PAY_CONFIG } from "@/lib/ton-pay-config";
 
-type Status = "idle" | "pending" | "success" | "error";
+type Status = "idle" | "pending" | "paid" | "failed";
 
 export default function CheckoutPage() {
   const [status, setStatus] = useState<Status>("idle");
@@ -13,7 +13,7 @@ export default function CheckoutPage() {
 
   const { pay } = useTonPay();
 
-  const amount = 1.5;       // TON
+  const amount = 1.5;
   const orderId = "demo-order-001";
 
   async function handlePay() {
@@ -33,21 +33,21 @@ export default function CheckoutPage() {
           { chain: TON_PAY_CONFIG.chain, apiKey: TON_PAY_CONFIG.apiKey }
         );
 
-        // Persist the reference on the server BEFORE returning. Webhook arrives
-        // asynchronously and needs to map `reference` → order.
+        // Persist the reference on the server before returning. If webhooks are
+        // enabled, the webhook route uses this to match on-chain events to orders.
+        // Without webhooks, the server-side polling job (see app/api/orders/route.ts)
+        // uses this to track the order to completion.
         await fetch("/api/orders", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ orderId, reference, amount, asset: "TON" }),
         });
 
-        // Kick off status polling in parallel — UX only, source of truth is the webhook.
         void pollStatus(reference).catch(() => {});
-
-        return { message: { ...message, payload: message.payload }, reference };
+        return { message, reference };
       });
     } catch (err) {
-      setStatus("error");
+      setStatus("failed");
       setError(err instanceof Error ? err.message : "payment failed");
     }
   }
@@ -62,20 +62,20 @@ export default function CheckoutPage() {
         apiKey: TON_PAY_CONFIG.apiKey,
       });
       if (t.status === "success") {
-        setStatus("success");
+        setStatus("paid");
         setTxHash(t.txHash ?? null);
         return;
       }
-      if (t.status === "error") {
-        setStatus("error");
+      if (t.status === "failed") {
+        setStatus("failed");
         setError(t.errorMessage ?? "payment failed");
         return;
       }
       await new Promise(r => setTimeout(r, delay));
       delay = Math.min(delay + 2000, 10_000);
     }
-    setStatus("error");
-    setError("timed out — check the dashboard");
+    setStatus("failed");
+    setError("timed out");
   }
 
   return (
@@ -88,10 +88,10 @@ export default function CheckoutPage() {
 
       <div style={{ marginTop: 24 }}>
         {status === "pending" && <p>Waiting for confirmation...</p>}
-        {status === "success" && (
+        {status === "paid" && (
           <p>Paid. Tx: <code>{txHash?.slice(0, 10)}...</code></p>
         )}
-        {status === "error" && <p style={{ color: "crimson" }}>{error}</p>}
+        {status === "failed" && <p style={{ color: "crimson" }}>{error}</p>}
       </div>
     </main>
   );

@@ -2,7 +2,7 @@
 
 A [Claude Code](https://claude.com/claude-code) skill for integrating [TON Pay](https://docs.ton.org/ecosystem/ton-pay/overview) into web apps, Vanilla JS sites, and Telegram Mini Apps.
 
-> **TL;DR:** clone into your Claude Code skills directory, then ask Claude "add TON Pay checkout to this app." The skill covers the SDK, the React hook, the webhook handler with HMAC verification, and three runnable example apps.
+> **TL;DR:** clone into your Claude Code skills directory, then ask Claude "add TON Pay checkout to this app." **No TON Pay merchant account is required** — the default path uses client-side polling and works with just a TON recipient address. The skill also covers the optional webhook path (HMAC verification + 7-step validation) for apps that want push-based notifications.
 
 ## What's in the box
 

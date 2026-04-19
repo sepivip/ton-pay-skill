@@ -2,21 +2,32 @@
 
 Runnable reference for the TON Pay skill, targeting Next.js 15 App Router.
 
+**Default path:** dashboard-free. No TON Pay merchant account required. Client polls `getTonPayTransferByReference` to detect payment completion.
+
+**Optional upgrade:** webhook-based confirmation via the TON Pay Merchant Dashboard. The webhook route (`app/api/ton-pay/webhook/route.ts`) is included but is only exercised if you fill in `TONPAY_API_SECRET`.
+
 ## Prerequisites
 
-1. TON Pay merchant account with testnet API key + secret (Dashboard → Developer → API keys, Testnet environment)
-2. A testnet recipient address (use Tonkeeper → Developer Mode → Testnet)
-3. `ngrok` or equivalent tunnel
+**For the default path (no dashboard):**
+1. A testnet TON recipient address (Tonkeeper → Developer Mode → Testnet gives you one)
+2. `ngrok` or equivalent tunnel
+3. Node 18+
+
+**Only if you want webhooks:**
+4. TON Pay merchant account + testnet API key + API secret (Merchant Dashboard → Developer → Webhooks, Testnet environment)
 
 ## Setup
 
 ```bash
 cp .env.example .env.local
-# Fill in:
+# Required fields:
+#   NEXT_PUBLIC_TON_RECIPIENT_ADDR
+#   NEXT_PUBLIC_TONPAY_CHAIN=testnet
+#   NEXT_PUBLIC_APP_URL   <-- set this AFTER starting ngrok
+#
+# Optional (only for webhooks):
 #   NEXT_PUBLIC_TONPAY_API_KEY
 #   TONPAY_API_SECRET
-#   NEXT_PUBLIC_TON_RECIPIENT_ADDR
-#   NEXT_PUBLIC_APP_URL   <-- set this AFTER starting ngrok
 ```
 
 ## Run
@@ -45,23 +56,22 @@ Edit `public/tonconnect-manifest.json`:
 
 Place any 180×180 PNG at `public/icon-180.png`.
 
-## Register the webhook
-
-TON Pay Merchant Dashboard → Developer → Webhooks → add:
-
-```
-<your-ngrok-url>/api/ton-pay/webhook
-```
-
-Click "Send sample" — you should see a 200 in the Next.js dev log.
-
 ## Make a testnet payment
 
 1. Visit `<your-ngrok-url>/checkout`
 2. Click the TON Pay button
 3. Connect Tonkeeper (testnet mode), sign the transaction
-4. Watch the status update on the page (client-side polling)
-5. Watch the server log show the webhook arrival and `markOrderPaid`
+4. Watch the status update on the page — client-side polling hits `pay.ton.org` every 2–10s until `status === "success"`
+
+## Optional — enable webhooks
+
+Register a webhook URL in the TON Pay Merchant Dashboard → Developer → Webhooks:
+
+```
+<your-ngrok-url>/api/ton-pay/webhook
+```
+
+Add `TONPAY_API_SECRET` to `.env.local`, restart the dev server, and click "Send sample" in the dashboard. The route at [app/api/ton-pay/webhook/route.ts](app/api/ton-pay/webhook/route.ts) verifies the HMAC signature and runs the 7-step validation (see `../../reference/webhooks.md`).
 
 ## Verify end-to-end
 
@@ -69,15 +79,16 @@ Click "Send sample" — you should see a 200 in the Next.js dev log.
 | ---------------------------------- | --------------------------------------------------------- |
 | `/checkout` loads                  | Shows "TON Pay" button, no console errors                 |
 | Click button                       | Wallet selector opens                                     |
-| Sign on Tonkeeper testnet          | Status flips to "⏳ Waiting for confirmation"             |
-| Wait ~10 seconds                   | Status flips to "✅ Paid" with a tx hash                  |
-| Server log                         | Shows `markOrderPaid` call for the reference              |
-| Dashboard "Send sample" again      | Server returns 200, no duplicate `markOrderPaid`          |
+| Sign on Tonkeeper testnet          | Status flips to "Waiting for confirmation..."             |
+| Wait ~10 seconds                   | Status flips to "Paid" with a tx hash                     |
+| (With webhooks) Server log         | `markOrderPaid` call for the reference                    |
+| (With webhooks) "Send sample" x2   | Server returns 200, no duplicate `markOrderPaid`          |
 
 If any step fails, see `../../reference/troubleshooting.md`.
 
 ## Production notes
 
 - Replace `lib/orders-db.ts` with your real DB — the in-memory map resets on every restart.
-- Move `TONPAY_API_SECRET` to your hosting provider's secret manager, never commit `.env.local`.
-- For mainnet: create a separate mainnet API key + secret in the Dashboard, flip `NEXT_PUBLIC_TONPAY_CHAIN=mainnet`, register your production webhook URL.
+- Move `TONPAY_API_SECRET` (if you use it) to your hosting provider's secret manager, never commit `.env.local`.
+- For mainnet: flip `NEXT_PUBLIC_TONPAY_CHAIN=mainnet` and use your mainnet `recipientAddr`. If you're on the webhook path, also create mainnet API key + secret in the Dashboard and register your production webhook URL.
+- Consider also running a server-side poller as a backstop in case the client closes their tab mid-payment — the webhook catches this automatically; the dashboard-free path needs server-side polling to be robust.
