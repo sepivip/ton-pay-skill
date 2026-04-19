@@ -1,0 +1,19 @@
+{
+  "name": "@ton-pay/example-vanilla-js",
+  "version": "0.1.0",
+  "description": "TON Pay vanilla JS example — static client + Express webhook server",
+  "type": "module",
+  "scripts": {
+    "dev:static": "npx serve public -p 3000",
+    "dev:webhook": "node server/webhook.js",
+    "build": "node --check public/main.js && node --check server/webhook.js && echo 'Syntax OK'"
+  },
+  "keywords": ["ton", "tonpay", "vanilla", "example"],
+  "license": "MIT",
+  "dependencies": {
+    "@ton-pay/api": "0.3.2",
+    "@ton-pay/ui": "0.1.2",
+    "@tonconnect/ui": "2.4.4",
+    "express": "4.21.0"
+  }
+}

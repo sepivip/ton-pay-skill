@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TON Pay — Vanilla JS Example</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .card {
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-radius: 16px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .order-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9rem;
+      color: #94a3b8;
+    }
+    .order-row span:last-child { color: #e2e8f0; font-weight: 500; }
+
+    .divider { border: none; border-top: 1px solid #2d3148; }
+
+    #ton-pay-btn { width: 100%; }
+
+    #status-box {
+      display: none;
+      background: #0f172a;
+      border: 1px solid #2d3148;
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.85rem;
+      color: #94a3b8;
+      word-break: break-all;
+    }
+    #status-box.visible { display: block; }
+    #status-box.success { border-color: #22c55e; color: #86efac; }
+    #status-box.error   { border-color: #ef4444; color: #fca5a5; }
+  </style>
+
+  <!--
+    === CONFIGURATION ===
+    Replace the placeholder values below with your real credentials.
+    For production, use a bundler (e.g. Vite) with import.meta.env instead.
+  -->
+  <script>
+    window.__TONPAY_API_KEY__     = "YOUR_API_KEY";
+    window.__TONPAY_CHAIN__       = "testnet";          // "mainnet" | "testnet"
+    window.__TON_RECIPIENT_ADDR__ = "EQ...YOUR_WALLET_ADDRESS";
+    window.__APP_URL__            = "https://your-ngrok-id.ngrok-free.app";
+  </script>
+</head>
+<body>
+  <div class="card">
+    <h1>TON Pay — Vanilla JS</h1>
+
+    <div class="order-row">
+      <span>Order</span>
+      <span id="order-id">Loading…</span>
+    </div>
+    <div class="order-row">
+      <span>Amount</span>
+      <span id="order-amount">1 TON</span>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- The embed script renders the button inside this div -->
+    <div id="ton-pay-btn"></div>
+
+    <div id="status-box"></div>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "@tonconnect/ui": "https://esm.sh/@tonconnect/ui@2.4.4"
+      }
+    }
+  </script>
+
+  <script type="module" src="main.js"></script>
+
+  <!--
+    Embed button — reads `containerId` and `callback` from query params.
+    The module script above sets window.onTonPayClick before this runs,
+    so the button will invoke it on click.
+  -->
+  <script src="ton-pay-embed.js?preset=gradient&variant=long&borderRadius=8&containerId=ton-pay-btn&callback=onTonPayClick"></script>
+</body>
+</html>
