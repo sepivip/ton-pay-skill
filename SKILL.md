@@ -72,38 +72,43 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 ```tsx
 "use client";
-import { TonPayButton } from "@ton-pay/ui-react";
+import { TonPayButton, useTonPay } from "@ton-pay/ui-react";
 import { createTonPayTransfer } from "@ton-pay/api";
 
 const RECIPIENT = process.env.NEXT_PUBLIC_TON_RECIPIENT_ADDR!;
 const API_KEY   = process.env.NEXT_PUBLIC_TONPAY_API_KEY!;
 
 export default function CheckoutPage() {
+  const { pay } = useTonPay();
   const amount = 1.5;              // TON
   const orderId = "order-42";
 
-  async function createMessage(senderAddr: string) {
-    const { message, reference } = await createTonPayTransfer(
-      {
-        amount,
-        asset: "TON",
-        recipientAddr: RECIPIENT,
-        senderAddr,
-        commentToSender: orderId,
-      },
-      { chain: "testnet", apiKey: API_KEY }
-    );
-    // Persist `reference` alongside your order BEFORE returning.
-    await fetch("/api/orders", {
-      method: "POST",
-      body: JSON.stringify({ orderId, reference, amount, asset: "TON" }),
+  async function handlePay() {
+    await pay(async (senderAddr: string) => {
+      const { message, reference } = await createTonPayTransfer(
+        {
+          amount,
+          asset: "TON",
+          recipientAddr: RECIPIENT,
+          senderAddr,
+          commentToSender: orderId,
+        },
+        { chain: "testnet", apiKey: API_KEY }
+      );
+      // Persist `reference` alongside your order BEFORE returning.
+      await fetch("/api/orders", {
+        method: "POST",
+        body: JSON.stringify({ orderId, reference, amount, asset: "TON" }),
+      });
+      return { message, reference };
     });
-    return { message, reference };
   }
 
-  return <TonPayButton createMessage={createMessage} />;
+  return <TonPayButton handlePay={handlePay} />;
 }
 ```
+
+**Key API shape:** `useTonPay()` returns `{ pay }`. `pay(getMessage)` invokes your async callback with the connected wallet's `senderAddr` and expects you to return `{ message, reference }` — it then submits `message` to the wallet for signing. `<TonPayButton handlePay={...} />` just triggers your `handlePay`; all the wallet/connection UX is handled by the `<TonConnectUIProvider>` you set up in the layout.
 
 **Set up the webhook** — see `reference/webhooks.md`. Register your webhook URL in the Merchant Dashboard after deploying.
 
@@ -193,7 +198,7 @@ createRoot(document.getElementById("root")!).render(
 );
 ```
 
-**Checkout** is identical to the Next.js snippet above (§3A). The `manifestUrl` must match your @BotFather Mini App URL exactly — see `reference/telegram-mini-app.md`.
+**Checkout** uses the same `useTonPay()` + `<TonPayButton handlePay>` pattern as §3A — the TMA-specific concerns are limited to init (`@telegram-apps/sdk-react`), back-button handling, and theming. The `manifestUrl` must match your @BotFather Mini App URL exactly — see `reference/telegram-mini-app.md`.
 
 ## §4 Production checklist
 
