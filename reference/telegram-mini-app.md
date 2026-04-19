@@ -48,19 +48,35 @@ useEffect(() => {
 
 ## 4. Theming
 
-Telegram exposes theme params (dark/light/colours) via the SDK. The default `<TonPayButton>` does not auto-theme — read theme params and pass them through:
+Telegram exposes theme params (dark/light/colours) via the SDK. The default `<TonPayButton>` does not auto-theme — subscribe to the theme-param signals and pass them through:
 
 ```ts
-import { themeParams } from "@telegram-apps/sdk-react";
+import { useSignal } from "@telegram-apps/sdk-react";
+import {
+  themeParamsButtonColor,
+  themeParamsButtonTextColor,
+} from "@telegram-apps/sdk-react";
 
-const params = themeParams.state();
-const buttonStyle = {
-  background: params.buttonColor ?? "#0088cc",
-  color:      params.buttonTextColor ?? "#ffffff",
-};
+function Checkout() {
+  const bg = useSignal(themeParamsButtonColor);
+  const fg = useSignal(themeParamsButtonTextColor);
+
+  const buttonStyle = {
+    background: bg ?? "#0088cc",
+    color:      fg ?? "#ffffff",
+  };
+
+  return (
+    <div style={buttonStyle}>
+      <TonPayButton handlePay={handlePay} />
+    </div>
+  );
+}
 ```
 
-Pass `style={buttonStyle}` to `<TonPayButton>` (or wrap it in a styled container).
+In `@telegram-apps/sdk-react@3.x`, theme params are exposed as signals (not a single `themeParams.state()` call). Use `useSignal()` for each colour you need.
+
+Before using any theme signal you must call `themeParams.mountSync()` once during app init — see §7 and `src/main.tsx` in `examples/telegram-mini-app/`.
 
 ## 5. Local development
 
