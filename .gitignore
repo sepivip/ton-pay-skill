@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+package-lock.json.bak
+
+# Build outputs
+.next/
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Test / local
+.ngrok/
+*.log
