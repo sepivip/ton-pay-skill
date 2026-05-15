@@ -12,7 +12,7 @@
     "@ton-pay/api": "0.3.2",
     "@ton-pay/ui-react": "0.3.2",
     "@tonconnect/ui-react": "2.4.4",
-    "next": "15.0.0",
+    "next": "15.5.18",
     "react": "19.0.0",
     "react-dom": "19.0.0"
   },
